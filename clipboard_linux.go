@@ -107,7 +107,7 @@ func write(t Format, buf []byte) (<-chan struct{}, error) {
 		s = "image/png"
 	}
 
-	start := make(chan int)
+	start := make(chan int, 1)
 	done := make(chan struct{}, 1)
 
 	go func() { // serve as a daemon until the ownership is terminated.
@@ -118,6 +118,8 @@ func write(t Format, buf []byte) (<-chan struct{}, error) {
 		defer C.free(unsafe.Pointer(cs))
 
 		h := cgo.NewHandle(start)
+		defer cgo.Handle(h).Delete()
+
 		var ok C.int
 		if len(buf) == 0 {
 			ok = C.clipboard_write(cs, nil, 0, C.uintptr_t(h))
@@ -125,18 +127,23 @@ func write(t Format, buf []byte) (<-chan struct{}, error) {
 			ok = C.clipboard_write(cs, (*C.uchar)(unsafe.Pointer(&(buf[0]))), C.size_t(len(buf)), C.uintptr_t(h))
 		}
 		if ok != C.int(0) {
-			fmt.Fprintf(os.Stderr, "write failed with status: %d\n", int(ok))
+			if debug {
+				fmt.Fprintf(os.Stderr, "clipboard write failed with status: %d\n", int(ok))
+			}
 		}
 		done <- struct{}{}
 		close(done)
 	}()
 
-	status := <-start
-	if status < 0 {
-		return nil, errUnavailable
+	select {
+	case status := <-start:
+		if status < 0 {
+			return nil, errUnavailable
+		}
+		return done, nil
+	case <-time.After(5 * time.Second):
+		return nil, fmt.Errorf("clipboard write timeout")
 	}
-	// wait until enter event loop
-	return done, nil
 }
 
 func watch(ctx context.Context, t Format) <-chan []byte {
@@ -144,10 +151,11 @@ func watch(ctx context.Context, t Format) <-chan []byte {
 	ti := time.NewTicker(time.Second)
 	last := Read(t)
 	go func() {
+		defer ti.Stop()
+		defer close(recv)
 		for {
 			select {
 			case <-ctx.Done():
-				close(recv)
 				return
 			case <-ti.C:
 				b := Read(t)
@@ -155,8 +163,12 @@ func watch(ctx context.Context, t Format) <-chan []byte {
 					continue
 				}
 				if !bytes.Equal(last, b) {
-					recv <- b
-					last = b
+					select {
+					case recv <- b:
+						last = b
+					case <-ctx.Done():
+						return
+					}
 				}
 			}
 		}
@@ -167,6 +179,8 @@ func watch(ctx context.Context, t Format) <-chan []byte {
 //export syncStatus
 func syncStatus(h uintptr, val int) {
 	v := cgo.Handle(h).Value().(chan int)
-	v <- val
-	cgo.Handle(h).Delete()
+	select {
+	case v <- val:
+	default:
+	}
 }
