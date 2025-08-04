@@ -148,7 +148,10 @@ func TestClipboardMultipleWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read gold file: %v", err)
 	}
-	chg := clipboard.Write(clipboard.FmtImage, data)
+	err = clipboard.Write(clipboard.FmtImage, data)
+	if err != nil {
+		t.Fatalf("write image to clipboard should not return error, got: %v", err)
+	}
 
 	data = []byte("golang.design/x/clipboard")
 	clipboard.Write(clipboard.FmtText, data)
@@ -159,14 +162,6 @@ func TestClipboardMultipleWrites(t *testing.T) {
 	select {
 	case <-ctx.Done():
 		t.Fatalf("failed to receive clipboard change notification")
-	case _, ok := <-chg:
-		if !ok {
-			t.Fatalf("change channel is closed before receiving the changed clipboard data")
-		}
-	}
-	_, ok := <-chg
-	if ok {
-		t.Fatalf("changed channel should be closed after receiving the notification")
 	}
 
 	b := clipboard.Read(clipboard.FmtImage)
@@ -217,12 +212,14 @@ func TestClipboardWriteEmpty(t *testing.T) {
 		}
 	}
 
-	chg1 := clipboard.Write(clipboard.FmtText, nil)
+	err := clipboard.Write(clipboard.FmtText, nil)
+	if err != nil {
+		t.Fatalf("write nil to clipboard should not return error, got: %v", err)
+	}
 	if got := clipboard.Read(clipboard.FmtText); got != nil {
 		t.Fatalf("write nil to clipboard should read nil, got: %v", string(got))
 	}
 	clipboard.Write(clipboard.FmtText, []byte(""))
-	<-chg1
 
 	if got := clipboard.Read(clipboard.FmtText); string(got) != "" {
 		t.Fatalf("write empty string to clipboard should read empty string, got: `%v`", string(got))

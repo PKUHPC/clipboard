@@ -132,18 +132,22 @@ func Read(t Format) []byte {
 // this write.
 // If format t indicates an image, then the given buf assumes
 // the image data is PNG encoded.
-func Write(t Format, buf []byte) <-chan struct{} {
+func Write(t Format, buf []byte) error {
 	lock.Lock()
 	defer lock.Unlock()
 
-	changed, err := write(t, buf)
+	done, err := write(t, buf)
 	if err != nil {
 		if debug {
 			fmt.Fprintf(os.Stderr, "write to clipboard err: %v\n", err)
 		}
-		return nil
+		return err
 	}
-	return changed
+	if done == nil {
+		return fmt.Errorf("write to clipboard error")
+	}
+
+	return nil
 }
 
 // Watch returns a receive-only channel that received the clipboard data

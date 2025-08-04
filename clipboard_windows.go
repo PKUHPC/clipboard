@@ -317,10 +317,14 @@ func read(t Format) (buf []byte, err error) {
 		return nil, errUnavailable
 	}
 
-	// try again until open clipboard successed
+	cnt := 0
 	for {
+		cnt++
 		r, _, _ = openClipboard.Call()
 		if r == 0 {
+			if cnt > 25 {
+				return nil, fmt.Errorf("failed to open clipboard after mutil attempts")
+			}
 			continue
 		}
 		break
@@ -341,15 +345,23 @@ func read(t Format) (buf []byte, err error) {
 // returns true if success or false if failed.
 func write(t Format, buf []byte) (<-chan struct{}, error) {
 	errch := make(chan error)
-	changed := make(chan struct{}, 1)
+
 	go func() {
 		// make sure GetClipboardSequenceNumber happens with
 		// OpenClipboard on the same thread.
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
+
+		cnt := 0
 		for {
+			cnt++
 			r, _, _ := openClipboard.Call(0)
 			if r == 0 {
+				if cnt > 25 {
+					errch <- fmt.Errorf("failed to open clipboard after mutil attempts")
+					return
+				}
+				time.Sleep(200 * time.Millisecond)
 				continue
 			}
 			break
@@ -379,23 +391,15 @@ func write(t Format, buf []byte) (<-chan struct{}, error) {
 		// paste the data.
 		closeClipboard.Call()
 
-		cnt, _, _ := getClipboardSequenceNumber.Call()
 		errch <- nil
-		for {
-			time.Sleep(time.Second)
-			cur, _, _ := getClipboardSequenceNumber.Call()
-			if cur != cnt {
-				changed <- struct{}{}
-				close(changed)
-				return
-			}
-		}
 	}()
+
 	err := <-errch
 	if err != nil {
 		return nil, err
 	}
-	return changed, nil
+
+	return make(chan struct{}), nil
 }
 
 func watch(ctx context.Context, t Format) <-chan []byte {

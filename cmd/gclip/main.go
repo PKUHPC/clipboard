@@ -100,7 +100,10 @@ func cpy() error {
 	}
 
 	// Wait until clipboard content has been changed.
-	<-clipboard.Write(t, b)
+	err = clipboard.Write(t, b)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to write to clipboard: %v", err)
+	}
 	return nil
 }
 
