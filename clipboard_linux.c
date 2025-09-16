@@ -157,6 +157,7 @@ void send_incr_chunk(incr_state_t* state) {
 // if the write is availiable for reading.
 int clipboard_write(char *typ, unsigned char *buf, size_t n, uintptr_t handle) {
 	if (!initX11()) {
+	    syncStatus(handle, -1);
 		return -1;
 	}
 
